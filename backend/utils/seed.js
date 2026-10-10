@@ -1,39 +1,28 @@
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '../.env') });
-const mongoose = require('mongoose');
+// Seeds the database with demo accounts, students, cases, opportunities and courses.
+// Runs automatically on the first API request when the database has no users.
 const bcrypt = require('bcryptjs');
+const { count } = require('drizzle-orm');
+const { db, schema, toDoc } = require('../config/db');
 
-const User = require('../models/User');
-const Student = require('../models/Student');
-const DropoutCase = require('../models/DropoutCase');
-const Opportunity = require('../models/Opportunity');
-const Course = require('../models/Course');
-
-const connectDB = async () => {
-  await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/digital-education-platform');
-  console.log('MongoDB Connected for seeding...');
-};
+const { users, students, dropoutCases, opportunities, courses } = schema;
 
 const seedData = async () => {
-  await connectDB();
-
-  // Clear existing data
-  await User.deleteMany();
-  await Student.deleteMany();
-  await DropoutCase.deleteMany();
-  await Opportunity.deleteMany();
-  await Course.deleteMany();
-  console.log('Cleared existing data');
-
-  // Create Users
-  const adminUser = await User.create({ name: 'Admin User', email: 'admin@decp.edu', password: 'admin123', role: 'admin', school: 'Education Department' });
-  const teacher1 = await User.create({ name: 'Meena Sundaram', email: 'meena@decp.edu', password: 'teacher123', role: 'teacher', school: 'Government Higher Secondary School, Coimbatore' });
-  const teacher2 = await User.create({ name: 'Rajan Pillai', email: 'rajan@decp.edu', password: 'teacher123', role: 'teacher', school: 'Government High School, Madurai' });
-  const student1 = await User.create({ name: 'Priya Nair', email: 'priya@decp.edu', password: 'student123', role: 'student', school: 'Government Higher Secondary School, Coimbatore' });
-  console.log('Users created');
+  // Create Users (skipped if another instance is already seeding)
+  const userRows = [
+    { name: 'Admin User', email: 'admin@decp.edu', password: 'admin123', role: 'admin', school: 'Education Department' },
+    { name: 'Meena Sundaram', email: 'meena@decp.edu', password: 'teacher123', role: 'teacher', school: 'Government Higher Secondary School, Coimbatore' },
+    { name: 'Rajan Pillai', email: 'rajan@decp.edu', password: 'teacher123', role: 'teacher', school: 'Government High School, Madurai' },
+    { name: 'Priya Nair', email: 'priya@decp.edu', password: 'student123', role: 'student', school: 'Government Higher Secondary School, Coimbatore' },
+  ];
+  const insertedUsers = await db.insert(users)
+    .values(await Promise.all(userRows.map(async (u) => ({ ...u, password: await bcrypt.hash(u.password, 10) }))))
+    .onConflictDoNothing()
+    .returning();
+  if (insertedUsers.length !== userRows.length) return false;
+  const [adminUser, teacher1, teacher2, student1] = userRows.map((u) => toDoc(insertedUsers.find((r) => r.email === u.email)));
 
   // Create Students
-  const students = await Student.insertMany([
+  const studentRows = (await db.insert(students).values([
     { name: 'Arun Kumar', age: 14, class: '9th', school: 'Government Higher Secondary School, Coimbatore', location: 'Coimbatore', district: 'Coimbatore', gender: 'Male', guardianName: 'Senthil Kumar', guardianContact: '9876543210', attendancePercentage: 45, riskLevel: 'High', educationStatus: 'At-Risk', teacherId: teacher1._id, hasDigitalAccess: false, preferredLanguage: 'Tamil' },
     { name: 'Lakshmi Devi', age: 13, class: '8th', school: 'Government Higher Secondary School, Coimbatore', location: 'Coimbatore', district: 'Coimbatore', gender: 'Female', guardianName: 'Devi Amma', guardianContact: '9876543211', attendancePercentage: 72, riskLevel: 'Medium', educationStatus: 'Active', teacherId: teacher1._id, hasDigitalAccess: false, preferredLanguage: 'Tamil' },
     { name: 'Mohammed Saleem', age: 15, class: '10th', school: 'Government Higher Secondary School, Coimbatore', location: 'Coimbatore', district: 'Coimbatore', gender: 'Male', guardianName: 'Abdul Saleem', guardianContact: '9876543212', attendancePercentage: 60, riskLevel: 'Medium', educationStatus: 'Active', teacherId: teacher1._id, hasDigitalAccess: true, preferredLanguage: 'Tamil' },
@@ -42,19 +31,17 @@ const seedData = async () => {
     { name: 'Anitha Krishnan', age: 13, class: '8th', school: 'Government High School, Madurai', location: 'Madurai', district: 'Madurai', gender: 'Female', guardianName: 'Krishnan', guardianContact: '9876543215', attendancePercentage: 55, riskLevel: 'Medium', educationStatus: 'At-Risk', teacherId: teacher2._id, hasDigitalAccess: false, preferredLanguage: 'Tamil' },
     { name: 'Vijay Pandi', age: 15, class: '10th', school: 'Government High School, Madurai', location: 'Madurai', district: 'Madurai', gender: 'Male', guardianName: 'Pandi Raja', guardianContact: '9876543216', attendancePercentage: 79, riskLevel: 'Low', educationStatus: 'Active', teacherId: teacher2._id, hasDigitalAccess: true, preferredLanguage: 'Tamil' },
     { name: 'Saranya Murugan', age: 12, class: '7th', school: 'Government High School, Madurai', location: 'Madurai', district: 'Madurai', gender: 'Female', guardianName: 'Murugan', guardianContact: '9876543217', attendancePercentage: 92, riskLevel: 'Low', educationStatus: 'Active', teacherId: teacher2._id, hasDigitalAccess: false, preferredLanguage: 'Tamil' },
-  ]);
-  console.log('Students created');
+  ]).returning()).map(toDoc);
 
   // Create Dropout Cases
-  await DropoutCase.insertMany([
-    { studentId: students[0]._id, teacherId: teacher1._id, reason: 'Financial difficulties', remarks: 'Family income has dropped significantly. Father lost job. Student helping family.', riskLevel: 'High', status: 'Intervention Planned', intervention: 'Financial assistance application submitted under CM Scholarship scheme', followUpDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), isResolved: false },
-    { studentId: students[4]._id, teacherId: teacher1._id, reason: 'Need to work', remarks: 'Student working in agriculture during harvest season. Has not attended school for 3 weeks.', riskLevel: 'High', status: 'Counselling Provided', intervention: 'Parents counselled. Scholarship applied. Bridge education discussed.', followUpDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), isResolved: false },
-    { studentId: students[5]._id, teacherId: teacher2._id, reason: 'Family circumstances', remarks: 'Mother is unwell. Student is needed at home to care for younger siblings.', riskLevel: 'Medium', status: 'Under Review', intervention: '', followUpDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), isResolved: false },
+  await db.insert(dropoutCases).values([
+    { studentId: studentRows[0]._id, teacherId: teacher1._id, reason: 'Financial difficulties', remarks: 'Family income has dropped significantly. Father lost job. Student helping family.', riskLevel: 'High', status: 'Intervention Planned', intervention: 'Financial assistance application submitted under CM Scholarship scheme', followUpDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), isResolved: false },
+    { studentId: studentRows[4]._id, teacherId: teacher1._id, reason: 'Need to work', remarks: 'Student working in agriculture during harvest season. Has not attended school for 3 weeks.', riskLevel: 'High', status: 'Counselling Provided', intervention: 'Parents counselled. Scholarship applied. Bridge education discussed.', followUpDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), isResolved: false },
+    { studentId: studentRows[5]._id, teacherId: teacher2._id, reason: 'Family circumstances', remarks: 'Mother is unwell. Student is needed at home to care for younger siblings.', riskLevel: 'Medium', status: 'Under Review', intervention: '', followUpDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), isResolved: false },
   ]);
-  console.log('Dropout cases created');
 
   // Create Opportunities
-  await Opportunity.insertMany([
+  await db.insert(opportunities).values([
     {
       title: 'Chief Minister\'s Special Scholarship Scheme',
       provider: 'Government of Tamil Nadu',
@@ -168,10 +155,9 @@ const seedData = async () => {
       educationLevel: ['Class 9', 'Class 10', 'Class 11', 'Class 12', 'Higher Education'],
     },
   ]);
-  console.log('Opportunities created');
 
   // Create Courses
-  await Course.insertMany([
+  await db.insert(courses).values([
     {
       title: 'Communication Skills in English',
       category: 'Skill Development',
@@ -333,15 +319,23 @@ const seedData = async () => {
       ]
     },
   ]);
-  console.log('Courses created');
 
-  console.log('\n===== SEED DATA COMPLETE =====');
-  console.log('Admin: admin@decp.edu / admin123');
-  console.log('Teacher 1: meena@decp.edu / teacher123');
-  console.log('Teacher 2: rajan@decp.edu / teacher123');
-  console.log('Student: priya@decp.edu / student123');
-  console.log('================================\n');
-  process.exit(0);
+  return true;
+};
+let seedPromise = null;
+
+// Seed once per instance, only when the database is empty
+const ensureSeeded = () => {
+  if (!seedPromise) {
+    seedPromise = (async () => {
+      const [{ value }] = await db.select({ value: count() }).from(users);
+      if (Number(value) === 0) await seedData();
+    })().catch((error) => {
+      seedPromise = null;
+      throw error;
+    });
+  }
+  return seedPromise;
 };
 
-seedData().catch(err => { console.error(err); process.exit(1); });
+module.exports = { seedData, ensureSeeded };

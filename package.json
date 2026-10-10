@@ -2,17 +2,24 @@
   "name": "kalvithadam-platform",
   "version": "1.0.0",
   "private": true,
-  "workspaces": [
-    "frontend",
-    "backend"
-  ],
   "scripts": {
-    "build": "npm run build --workspace=frontend",
-    "dev:frontend": "npm run dev --workspace=frontend",
-    "dev:backend": "npm run dev --workspace=backend",
-    "start": "npm run start --workspace=backend"
+    "build": "npm install --prefix frontend --include=optional && npm run build --prefix frontend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "dev:backend": "node backend/server.js",
+    "start": "node backend/server.js"
   },
   "dependencies": {
-    "serverless-http": "^3.2.0"
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.5",
+    "express": "^5.2.1",
+    "express-validator": "^7.3.2",
+    "jsonwebtoken": "^9.0.3",
+    "serverless-http": "^3.2.0",
+    "@netlify/database": "^2.0.1",
+    "drizzle-orm": "^1.0.0-beta.22"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^1.0.0-beta.22"
   }
 }

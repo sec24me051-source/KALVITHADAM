@@ -1,9 +1,4 @@
-let serverless;
-try {
-  serverless = require('serverless-http');
-} catch (e) {
-  serverless = require('../../backend/node_modules/serverless-http');
-}
+const serverless = require('serverless-http');
 
 const app = require('../../backend/app');
 

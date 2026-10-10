@@ -1,5 +1,5 @@
 [build]
-  command = "npm install --include=optional --package-lock=false && npm run build --workspace=frontend"
+  command = "npm run build"
   publish = "frontend/dist"
 
 [functions]
