@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const connectDB = require('./config/db');
+const { ensureSeeded } = require('./utils/seed');
 
 const app = express();
 
@@ -51,13 +51,13 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// Serverless DB connection middleware
+// Make sure the database has its initial demo data
 app.use(async (req, res, next) => {
   try {
-    await connectDB();
+    await ensureSeeded();
     next();
   } catch (error) {
-    console.error('Database connection error in request handler:', error.message);
+    console.error('Database initialization error:', error.message);
     res.status(500).json({
       message: 'Database connection failed',
       error: error.message,

@@ -1,21 +1,39 @@
-const Student = require('../models/Student');
+const { eq, and, desc, getTableColumns } = require('drizzle-orm');
+const { db, schema, toDoc, pickColumns, countWhere, isId } = require('../config/db');
+
+const { students, users } = schema;
+
+// Select students with their teacher populated as `teacherId`
+const selectStudents = (where) =>
+  db.select({ student: getTableColumns(students), teacher: { id: users.id, name: users.name, email: users.email, school: users.school } })
+    .from(students)
+    .leftJoin(users, eq(students.teacherId, users.id))
+    .where(where)
+    .orderBy(desc(students.createdAt))
+    .then((rows) => rows.map(({ student, teacher }) => ({ ...toDoc(student), teacherId: toDoc(teacher) })));
+
+const findStudent = async (id) => {
+  if (!isId(id)) return null;
+  const [student] = await db.select().from(students).where(eq(students.id, id));
+  return student || null;
+};
+
+const teacherScope = (req) => (req.user.role === 'teacher' ? eq(students.teacherId, req.user._id) : undefined);
 
 // GET /api/students
 const getStudents = async (req, res) => {
   try {
-    let query = {};
-    if (req.user.role === 'teacher') query.teacherId = req.user._id;
-    const students = await Student.find(query).populate('teacherId', 'name email school').sort('-createdAt');
-    res.json(students);
+    res.json(await selectStudents(teacherScope(req)));
   } catch (error) { res.status(500).json({ message: error.message }); }
 };
 
 // GET /api/students/:id
 const getStudent = async (req, res) => {
   try {
-    const student = await Student.findById(req.params.id).populate('teacherId', 'name email');
+    if (!isId(req.params.id)) return res.status(404).json({ message: 'Student not found' });
+    const [student] = await selectStudents(eq(students.id, req.params.id));
     if (!student) return res.status(404).json({ message: 'Student not found' });
-    if (req.user.role === 'teacher' && student.teacherId._id.toString() !== req.user._id.toString()) {
+    if (req.user.role === 'teacher' && student.teacherId?._id !== req.user._id) {
       return res.status(403).json({ message: 'Not authorized' });
     }
     res.json(student);
@@ -25,31 +43,33 @@ const getStudent = async (req, res) => {
 // POST /api/students
 const createStudent = async (req, res) => {
   try {
-    const studentData = { ...req.body, teacherId: req.user._id };
-    const student = await Student.create(studentData);
-    res.status(201).json(student);
+    const studentData = { ...pickColumns(students, req.body), teacherId: req.user._id };
+    const [student] = await db.insert(students).values(studentData).returning();
+    res.status(201).json(toDoc(student));
   } catch (error) { res.status(500).json({ message: error.message }); }
 };
 
 // PUT /api/students/:id
 const updateStudent = async (req, res) => {
   try {
-    const student = await Student.findById(req.params.id);
+    const student = await findStudent(req.params.id);
     if (!student) return res.status(404).json({ message: 'Student not found' });
-    if (req.user.role === 'teacher' && student.teacherId.toString() !== req.user._id.toString()) {
+    if (req.user.role === 'teacher' && student.teacherId !== req.user._id) {
       return res.status(403).json({ message: 'Not authorized' });
     }
-    const updated = await Student.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    res.json(updated);
+    const { teacherId, ...changes } = pickColumns(students, req.body);
+    const [updated] = await db.update(students).set({ ...changes, updatedAt: new Date() })
+      .where(eq(students.id, student.id)).returning();
+    res.json(toDoc(updated));
   } catch (error) { res.status(500).json({ message: error.message }); }
 };
 
 // DELETE /api/students/:id
 const deleteStudent = async (req, res) => {
   try {
-    const student = await Student.findById(req.params.id);
+    const student = await findStudent(req.params.id);
     if (!student) return res.status(404).json({ message: 'Student not found' });
-    await student.deleteOne();
+    await db.delete(students).where(eq(students.id, student.id));
     res.json({ message: 'Student removed' });
   } catch (error) { res.status(500).json({ message: error.message }); }
 };
@@ -57,12 +77,13 @@ const deleteStudent = async (req, res) => {
 // GET /api/students/stats
 const getStudentStats = async (req, res) => {
   try {
-    let matchQuery = {};
-    if (req.user.role === 'teacher') matchQuery.teacherId = req.user._id;
-    const total = await Student.countDocuments(matchQuery);
-    const atRisk = await Student.countDocuments({ ...matchQuery, educationStatus: 'At-Risk' });
-    const dropout = await Student.countDocuments({ ...matchQuery, educationStatus: 'Dropout' });
-    const active = await Student.countDocuments({ ...matchQuery, educationStatus: 'Active' });
+    const scope = teacherScope(req);
+    const [total, atRisk, dropout, active] = await Promise.all([
+      countWhere(students, scope),
+      countWhere(students, and(scope, eq(students.educationStatus, 'At-Risk'))),
+      countWhere(students, and(scope, eq(students.educationStatus, 'Dropout'))),
+      countWhere(students, and(scope, eq(students.educationStatus, 'Active'))),
+    ]);
     res.json({ total, atRisk, dropout, active });
   } catch (error) { res.status(500).json({ message: error.message }); }
 };

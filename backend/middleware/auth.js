@@ -1,14 +1,18 @@
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const { eq } = require('drizzle-orm');
+const { db, schema, toDoc } = require('../config/db');
+const { getJwtSecret } = require('../utils/generateToken');
 
 const protect = async (req, res, next) => {
   let token;
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
     try {
       token = req.headers.authorization.split(' ')[1];
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      req.user = await User.findById(decoded.id).select('-password');
-      if (!req.user) return res.status(401).json({ message: 'User not found' });
+      const decoded = jwt.verify(token, await getJwtSecret());
+      const [user] = await db.select().from(schema.users).where(eq(schema.users.id, decoded.id));
+      if (!user) return res.status(401).json({ message: 'User not found' });
+      const { password, ...safeUser } = user;
+      req.user = toDoc(safeUser);
       next();
     } catch (error) {
       return res.status(401).json({ message: 'Not authorized, token failed' });
